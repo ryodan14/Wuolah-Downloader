@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Wuolah Downloader Pro (iPad Camuflaje Total)
+// @name         Wuolah Downloader Pro (iPad Manual Link Rescue)
 // @namespace    https://wuolah.com
-// @version      6.5
-// @description  Burlas de seguridad para iPad camuflando la petición como un ordenador de sobremesa
+// @version      6.8
+// @description  Burlas de seguridad para iPad y método de rescate de enlace visual si el sistema bloquea
 // @author       tu
 // @match        https://wuolah.com/*
 // @grant        GM_xmlhttpRequest
@@ -93,7 +93,7 @@
         return null;
     }
 
-    // ─── DESCARGA CON CAMUFLAJE DE SOBREMESA ──────────────────
+    // ─── DESCARGA HÍBRIDA CON ENLACE DE EMERGENCIA VISUAL ─────
     function descargarDocumentoFiel(boton) {
         const token = getToken();
         if (!token) {
@@ -130,7 +130,6 @@
                 'Content-Type': 'application/json;charset=UTF-8',
                 'Origin': 'https://wuolah.com',
                 'Referer': window.location.href,
-                // CAMUFLAJE CLAVE: Forzamos al servidor a creer que somos un Mac de escritorio completo, no un iPad móvil
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             },
             data: JSON.stringify(bodyPayload),
@@ -146,12 +145,11 @@
 
                     boton.textContent = '✓ Abriendo...';
 
-                    // Forzar la apertura limpia en el iPad usando simulación nativa limpia
+                    // Intentar apertura limpia estándar por click fantasma
                     const enlaceInvisible = document.createElement('a');
                     enlaceInvisible.href = url;
                     enlaceInvisible.target = '_blank';
                     enlaceInvisible.rel = 'noreferrer';
-                    
                     document.body.appendChild(enlaceInvisible);
                     enlaceInvisible.click();
                     document.body.removeChild(enlaceInvisible);
@@ -159,17 +157,36 @@
                     setTimeout(() => restaurarBoton(boton), 2000);
 
                 } catch (err) {
-                    // PLAN C EXTREMO: Si la API de descargas directas sigue capada en este formato de cuenta en móvil,
-                    // intentamos redirigir al visor directo que usa la web para evitar el error.
-                    window.location.href = `https://api.wuolah.com/v2/download?fileId=${documentoActivo.id}&token=${encodeURIComponent(token)}`;
-                    setTimeout(() => restaurarBoton(boton), 2000);
+                    // Si falla por restricciones del iPad, el script no se rinde: inyecta el link directo en el panel
+                    mostrarEnlaceManual(url || `https://api.wuolah.com/v2/download?fileId=${documentoActivo.id}&token=${encodeURIComponent(token)}`);
                 }
             },
             onerror: () => {
-                alert('Error de conexión.');
-                restaurarBoton(boton);
+                // Si la extensión bloquea la petición cruzada en el iPad, mostramos el link directo alternativo
+                mostrarEnlaceManual(`https://api.wuolah.com/v2/download?fileId=${documentoActivo.id}&token=${encodeURIComponent(token)}`);
             }
         });
+    }
+
+    function mostrarEnlaceManual(urlFinal) {
+        const info = document.getElementById('wuolah-pro-info');
+        const btn = document.getElementById('wuolah-pro-btn');
+        if (info && btn) {
+            info.textContent = "¡Copiado al portapapeles! O pulsa abajo:";
+            info.style.color = '#f59e0b';
+            
+            // Transformamos el botón en un botón nativo indestructible con el enlace real dentro
+            btn.textContent = "🔗 TOCAR AQUÍ PARA EL PDF";
+            btn.style.background = '#f59e0b';
+            
+            // Creamos una redirección forzada nativa limpia al hacerle click de nuevo
+            btn.onclick = function() {
+                window.location.href = urlFinal;
+            };
+            
+            // Intentamos copiarlo automáticamente por comodidad
+            navigator.clipboard.writeText(urlFinal).catch(()=>{});
+        }
     }
 
     // ─── INTERFAZ GRÁFICA ─────────────────────────────────────
@@ -180,6 +197,12 @@
             btn.disabled = false;
             btn.style.background = '#10b981';
             btn.textContent = `🚀 Descargar PDF`;
+            // Restauramos el evento onclick original por si venía de un error anterior
+            btn.onclick = function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                descargarDocumentoFiel(btn);
+            };
         }
         if (textInfo && documentoActivo.nombre) {
             textInfo.textContent = documentoActivo.nombre.slice(0, 35) + (documentoActivo.nombre.length > 35 ? '...' : '');
