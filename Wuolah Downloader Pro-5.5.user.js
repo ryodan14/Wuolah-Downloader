@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Wuolah Downloader Pro (iPad Native Fix)
+// @name         Wuolah Downloader Pro (iPad Invisible Link Fix)
 // @namespace    https://wuolah.com
-// @version      5.9
-// @description  Descarga con compatibilidad nativa total para iPadOS y iOS usando enlaces HTML5 directos
+// @version      6.0
+// @description  Descarga estable en iPadOS/iOS simulando clics nativos invisibles en segundo plano
 // @author       tu
 // @match        https://wuolah.com/*
 // @grant        GM_xmlhttpRequest
@@ -24,7 +24,7 @@
         return (n || 'archivo').replace(/[<>:"/\\|?*]/g, '_').replace(/_pdf$/i, '').trim(); 
     }
 
-    // ─── INTERCEPTORES API ────────────────────────────────────
+    // ─── INTERCEPTORES DE API ─────────────────────────────────
     const originalOpen = XMLHttpRequest.prototype.open;
     XMLHttpRequest.prototype.open = function (method, url) {
         this.addEventListener('load', function () {
@@ -93,7 +93,7 @@
         return null;
     }
 
-    // ─── NÚCLEO DE DESCARGA ADAPTADO ──────────────────────────
+    // ─── NÚCLEO DE DESCARGA SIMULADA (MÉTODO INVISIBLE) ───────
     function descargarDocumentoFiel(boton) {
         const token = getToken();
         if (!token) {
@@ -101,6 +101,7 @@
             return;
         }
 
+        // Rescate si los interceptores no han saltado
         if (!documentoActivo.id || documentoActivo.urlAsociada !== window.location.pathname) {
             const datosRescate = extraerDatosDesdeUrlActual();
             if (datosRescate) {
@@ -145,27 +146,27 @@
                     let nombreFinal = sanitize(documentoActivo.nombre);
                     if (!nombreFinal.toLowerCase().endsWith('.pdf')) nombreFinal += '.pdf';
 
-                    // Detectar entorno Apple Móvil (iPad / iPhone)
+                    // Detectar si estamos en iPad o iPhone
                     const esAppleMovil = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
                     if (esAppleMovil) {
-                        boton.textContent = '✓ ¡Listo! Toca aquí';
-                        boton.style.background = '#3b82f6'; // Cambia a azul indicando que es un enlace físico
+                        boton.textContent = '✓ Abriendo PDF...';
+                        boton.style.background = '#10b981';
 
-                        // Convertimos temporalmente el botón en un enlace directo nativo HTML5
-                        const wrapperA = document.createElement('a');
-                        wrapperA.href = url;
-                        wrapperA.target = '_self'; // Forzamos a abrir en la misma pestaña si las nuevas están capadas
-                        wrapperA.style.textDecoration = 'none';
+                        // PLAN B IMPECABLE PARA IPAD: Crear enlace fantasma puro e imitar un toque físico
+                        const enlaceInvisible = document.createElement('a');
+                        enlaceInvisible.href = url;
+                        enlaceInvisible.target = '_blank'; // Abrir en pestaña nueva limpia
+                        enlaceInvisible.rel = 'noreferrer';
+                        enlaceInvisible.style.display = 'none';
                         
-                        // Envolvemos el botón para que al tocarlo el iPad reaccione nativamente al enlace
-                        boton.parentNode.insertBefore(wrapperA, boton);
-                        wrapperA.appendChild(boton);
+                        document.body.appendChild(enlaceInvisible);
+                        enlaceInvisible.click(); // Forzamos el click de Apple nativo
+                        document.body.removeChild(enlaceInvisible);
 
-                        // Si el usuario vuelve a hacer clic sobre el botón modificado, se abrirá el flujo nativo
-                        miBoton.onclick = null; 
+                        setTimeout(() => restaurarBoton(boton), 2000);
                     } else {
-                        // Flujo normal para ordenadores
+                        // Flujo estándar para PCs
                         boton.textContent = '✓ Guardando...';
                         GM_download({
                             url: url,
@@ -176,7 +177,7 @@
                     }
 
                 } catch (err) {
-                    alert('Error al procesar la descarga directa.');
+                    alert('Error del servidor de Wuolah al generar tu descarga. Prueba a recargar la página.');
                     restaurarBoton(boton);
                 }
             },
@@ -187,7 +188,7 @@
         });
     }
 
-    // ─── INTERFAZ FLOTANTE ────────────────────────────────────
+    // ─── INTERFAZ GRÁFICA ─────────────────────────────────────
     function actualizarInterfazAEncontrado() {
         const btn = document.getElementById('wuolah-pro-btn');
         const textInfo = document.getElementById('wuolah-pro-info');
@@ -265,15 +266,6 @@
                 if (info && datosNuevos) {
                     info.textContent = datosNuevos.nombre.slice(0, 35);
                     info.style.color = '#7eb8f7';
-                    
-                    // Si la ruta cambió, destruimos herencias de enlaces anteriores para evitar bucles
-                    const btn = document.getElementById('wuolah-pro-btn');
-                    if (btn && btn.parentNode.tagName === 'A') {
-                        const arr = btn.parentNode;
-                        arr.parentNode.insertBefore(btn, arr);
-                        arr.remove();
-                        restaurarBoton(btn);
-                    }
                 }
             }
         } else {
