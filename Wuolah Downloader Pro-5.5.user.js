@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Wuolah Downloader Pro (iPad Invisible Link Fix)
+// @name         Wuolah Downloader Pro (iPad Camuflaje Total)
 // @namespace    https://wuolah.com
-// @version      6.0
-// @description  Descarga estable en iPadOS/iOS simulando clics nativos invisibles en segundo plano
+// @version      6.5
+// @description  Burlas de seguridad para iPad camuflando la petición como un ordenador de sobremesa
 // @author       tu
 // @match        https://wuolah.com/*
 // @grant        GM_xmlhttpRequest
@@ -93,7 +93,7 @@
         return null;
     }
 
-    // ─── NÚCLEO DE DESCARGA SIMULADA (MÉTODO INVISIBLE) ───────
+    // ─── DESCARGA CON CAMUFLAJE DE SOBREMESA ──────────────────
     function descargarDocumentoFiel(boton) {
         const token = getToken();
         if (!token) {
@@ -101,7 +101,6 @@
             return;
         }
 
-        // Rescate si los interceptores no han saltado
         if (!documentoActivo.id || documentoActivo.urlAsociada !== window.location.pathname) {
             const datosRescate = extraerDatosDesdeUrlActual();
             if (datosRescate) {
@@ -130,7 +129,9 @@
                 'Accept': 'application/json, text/plain, */*',
                 'Content-Type': 'application/json;charset=UTF-8',
                 'Origin': 'https://wuolah.com',
-                'Referer': window.location.href
+                'Referer': window.location.href,
+                // CAMUFLAJE CLAVE: Forzamos al servidor a creer que somos un Mac de escritorio completo, no un iPad móvil
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             },
             data: JSON.stringify(bodyPayload),
             onload: (r) => {
@@ -143,42 +144,25 @@
 
                     if (!url) throw new Error('No URL');
 
-                    let nombreFinal = sanitize(documentoActivo.nombre);
-                    if (!nombreFinal.toLowerCase().endsWith('.pdf')) nombreFinal += '.pdf';
+                    boton.textContent = '✓ Abriendo...';
 
-                    // Detectar si estamos en iPad o iPhone
-                    const esAppleMovil = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+                    // Forzar la apertura limpia en el iPad usando simulación nativa limpia
+                    const enlaceInvisible = document.createElement('a');
+                    enlaceInvisible.href = url;
+                    enlaceInvisible.target = '_blank';
+                    enlaceInvisible.rel = 'noreferrer';
+                    
+                    document.body.appendChild(enlaceInvisible);
+                    enlaceInvisible.click();
+                    document.body.removeChild(enlaceInvisible);
 
-                    if (esAppleMovil) {
-                        boton.textContent = '✓ Abriendo PDF...';
-                        boton.style.background = '#10b981';
-
-                        // PLAN B IMPECABLE PARA IPAD: Crear enlace fantasma puro e imitar un toque físico
-                        const enlaceInvisible = document.createElement('a');
-                        enlaceInvisible.href = url;
-                        enlaceInvisible.target = '_blank'; // Abrir en pestaña nueva limpia
-                        enlaceInvisible.rel = 'noreferrer';
-                        enlaceInvisible.style.display = 'none';
-                        
-                        document.body.appendChild(enlaceInvisible);
-                        enlaceInvisible.click(); // Forzamos el click de Apple nativo
-                        document.body.removeChild(enlaceInvisible);
-
-                        setTimeout(() => restaurarBoton(boton), 2000);
-                    } else {
-                        // Flujo estándar para PCs
-                        boton.textContent = '✓ Guardando...';
-                        GM_download({
-                            url: url,
-                            name: nombreFinal,
-                            onerror: () => { window.open(url, '_blank'); restaurarBoton(boton); },
-                            onload: () => setTimeout(() => restaurarBoton(boton), 1500)
-                        });
-                    }
+                    setTimeout(() => restaurarBoton(boton), 2000);
 
                 } catch (err) {
-                    alert('Error del servidor de Wuolah al generar tu descarga. Prueba a recargar la página.');
-                    restaurarBoton(boton);
+                    // PLAN C EXTREMO: Si la API de descargas directas sigue capada en este formato de cuenta en móvil,
+                    // intentamos redirigir al visor directo que usa la web para evitar el error.
+                    window.location.href = `https://api.wuolah.com/v2/download?fileId=${documentoActivo.id}&token=${encodeURIComponent(token)}`;
+                    setTimeout(() => restaurarBoton(boton), 2000);
                 }
             },
             onerror: () => {
