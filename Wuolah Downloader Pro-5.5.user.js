@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Wuolah Downloader Pro (Nombres Reales Fieles)
+// @name         Wuolah Downloader Pro (Universal & iPad Fix)
 // @namespace    https://wuolah.com
-// @version      5.5
-// @description  Descarga con el nombre real del archivo incluso en modales forzados por URL
+// @version      5.8
+// @description  Descarga con nombres limpios y compatibilidad total para iPad/iOS (Safari y Chrome móvil)
 // @author       tu
 // @match        https://wuolah.com/*
 // @grant        GM_xmlhttpRequest
@@ -20,18 +20,8 @@
         urlAsociada: null
     };
 
-    function sanitize(n) {
-        return (n || 'archivo').replace(/[<>:"/\\|?*]/g, '_').replace(/_pdf$/i, '').trim();
-    }
-
-    // Auxiliar para procesar los JSONs interceptados de la API
-    function procesarDatosInterceptados(data) {
-        if (data && (data.id || data.uploadId)) {
-            documentoActivo.id = data.uploadId || data.id;
-            documentoActivo.nombre = data.name || data.sName || data.title || "archivo_wuolah";
-            documentoActivo.urlAsociada = window.location.pathname;
-            actualizarInterfazAEncontrado();
-        }
+    function sanitize(n) { 
+        return (n || 'archivo').replace(/[<>:"/\\|?*]/g, '_').replace(/_pdf$/i, '').trim(); 
     }
 
     // ─── 1. INTERCEPTOR XMLHTTPREQUEST ────────────────────────
@@ -41,7 +31,13 @@
             if (url.includes('api.wuolah.com/v2/documents/') || url.includes('api.wuolah.com/v2/uploads/')) {
                 try {
                     const res = JSON.parse(this.responseText);
-                    procesarDatosInterceptados(res?.data || res);
+                    const data = res?.data || res;
+                    if (data && (data.id || data.uploadId)) {
+                        documentoActivo.id = data.uploadId || data.id;
+                        documentoActivo.nombre = data.name || data.sName || data.title || "archivo_wuolah";
+                        documentoActivo.urlAsociada = window.location.pathname;
+                        actualizarInterfazAEncontrado();
+                    }
                 } catch (e) {}
             }
         });
@@ -53,12 +49,18 @@
     window.fetch = async function (...args) {
         const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
         const response = await originalFetch.apply(this, args);
-
+        
         if (url.includes('api.wuolah.com/v2/documents/') || url.includes('api.wuolah.com/v2/uploads/')) {
             try {
                 const clone = response.clone();
                 const res = await clone.json();
-                procesarDatosInterceptados(res?.data || res);
+                const data = res?.data || res;
+                if (data && (data.id || data.uploadId)) {
+                    documentoActivo.id = data.uploadId || data.id;
+                    documentoActivo.nombre = data.name || data.sName || data.title || "archivo_wuolah";
+                    documentoActivo.urlAsociada = window.location.pathname;
+                    actualizarInterfazAEncontrado();
+                }
             } catch (e) {}
         }
         return response;
@@ -66,28 +68,18 @@
 
     // ─── 3. PLAN DE RESCATE AVANZADO (ID + NOMBRE DESDE URL) ──
     function extraerDatosDesdeUrlActual() {
-        const path = window.location.pathname; // Ejemplo: "/apuntes/fisiologia/obesitate-galderak-pdf-13561823"
+        const path = window.location.pathname;
         const match = path.match(/-(\d+)(?:\/|$|\?)/);
-
         if (!match) return null;
 
         const id = match[1];
-
-        // Extraemos el pedazo de texto de la URL para usarlo de nombre limpio
         const partes = path.split('/');
         const slugCompleto = partes[partes.length - 1] || partes[partes.length - 2] || "";
-
-        // Quitamos el "-ID" y el "-pdf" del final para que quede estético
         let nombreCazado = slugCompleto.replace(`-${id}`, '').replace(/-pdf$/i, '').replace(/-/g, ' ');
+        
+        if (!nombreCazado || nombreCazado.trim() === "") nombreCazado = "archivo_wuolah";
 
-        if (!nombreCazado || nombreCazado.trim() === "") {
-            nombreCazado = "archivo_wuolah";
-        }
-
-        return {
-            id: id,
-            nombre: nombreCazado.trim()
-        };
+        return { id: id, nombre: nombreCazado.trim() };
     }
 
     // ─── CREDENCIALES ─────────────────────────────────────────
@@ -106,7 +98,7 @@
         return null;
     }
 
-    // ─── ACCIÓN DE DESCARGA BLINDADA ──────────────────────────
+    // ─── ACCIÓN DE DESCARGA ADAPTADA A MÓVILES/IPAD ───────────
     function descargarDocumentoFiel(boton) {
         const token = getToken();
         if (!token) {
@@ -114,7 +106,6 @@
             return;
         }
 
-        // Si los interceptores automáticos no pillaron datos frescos de la API, ejecutamos el rescate inteligente
         if (!documentoActivo.id || documentoActivo.urlAsociada !== window.location.pathname) {
             const datosRescate = extraerDatosDesdeUrlActual();
             if (datosRescate) {
@@ -122,7 +113,7 @@
                 documentoActivo.nombre = datosRescate.nombre;
                 documentoActivo.urlAsociada = window.location.pathname;
             } else {
-                alert('⚠ No se pudo detectar el documento en la barra de direcciones. Intenta recargar (F5).');
+                alert('⚠ No se pudo detectar el documento. Intenta recargar (F5).');
                 return;
             }
         }
@@ -130,9 +121,9 @@
         boton.textContent = '⏳ Solicitando enlace...';
         boton.style.background = '#6b7280';
 
-        const bodyPayload = {
-            fileId: parseInt(documentoActivo.id),
-            noAdsWithCoins: false
+        const bodyPayload = { 
+            fileId: parseInt(documentoActivo.id), 
+            noAdsWithCoins: false 
         };
 
         GM_xmlhttpRequest({
@@ -149,34 +140,37 @@
             onload: (r) => {
                 try {
                     if (r.status >= 400) throw new Error(`HTTP ${r.status}`);
-
+                    
                     const res = JSON.parse(r.responseText);
                     const root = res?.data || res;
                     const url = root?.url || root?.downloadUrl || root?.fileUrl || root?.link || root?.sUrl;
 
                     if (!url) throw new Error('No URL');
 
-                    // Saneamos el nombre final para el sistema operativo
                     let nombreFinal = sanitize(documentoActivo.nombre);
                     if (!nombreFinal.toLowerCase().endsWith('.pdf')) nombreFinal += '.pdf';
 
-                    boton.textContent = '✓ Guardando...';
+                    boton.textContent = '✓ Abriendo...';
 
-                    GM_download({
-                        url: url,
-                        name: nombreFinal,
-                        onerror: () => {
-                            // Alternativa si el navegador bloquea la descarga automática
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = nombreFinal;
-                            document.body.appendChild(a);
-                            a.click();
-                            a.remove();
-                            restaurarBoton(boton);
-                        },
-                        onload: () => setTimeout(() => restaurarBoton(boton), 1500)
-                    });
+                    // PLAN B INTEGRADO: Detectar si es un iPad/iPhone o si falla la descarga directa
+                    const esAppleMovil = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+                    if (esAppleMovil) {
+                        // En iPad abrimos el archivo directamente en pestaña nueva para esquivar el bloqueo de Apple
+                        window.open(url, '_blank');
+                        setTimeout(() => restaurarBoton(boton), 1500);
+                    } else {
+                        // En ordenadores intentamos la descarga directa tradicional
+                        GM_download({
+                            url: url,
+                            name: nombreFinal,
+                            onerror: () => {
+                                window.open(url, '_blank');
+                                restaurarBoton(boton);
+                            },
+                            onload: () => setTimeout(() => restaurarBoton(boton), 1500)
+                        });
+                    }
 
                 } catch (err) {
                     alert('Error al procesar la descarga directa.');
@@ -219,20 +213,20 @@
         panel.style.cssText = `
             position: fixed; bottom: 20px; right: 20px; z-index: 999999;
             background: #111827; color: #f3f4f6; font-family: system-ui, sans-serif;
-            border-radius: 12px; padding: 14px; width: 280px;
+            border-radius: 12px; padding: 14px; width: 250px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid #374151;
         `;
 
         panel.innerHTML = `
-            <div style="font-size: 12px; font-weight: bold; color: #9ca3af; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em;">
+            <div style="font-size: 11px; font-weight: bold; color: #9ca3af; margin-bottom: 4px; text-transform: uppercase;">
                 Wuolah Downloader Pro
             </div>
             <div id="wuolah-pro-info" style="font-size: 11px; color: #7eb8f7; margin-bottom: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                Preparado para descargar
+                Preparado
             </div>
             <button id="wuolah-pro-btn" style="
-                background: #10b981; color: white; font-weight: bold;
-                padding: 10px; border-radius: 6px; border: none;
+                background: #10b981; color: white; font-weight: bold; 
+                padding: 10px; border-radius: 6px; border: none; 
                 width: 100%; display: block; font-size: 13px;
                 cursor: pointer; transition: background 0.2s;
             ">🚀 Descargar PDF</button>
@@ -241,17 +235,12 @@
         document.body.appendChild(panel);
 
         const miBoton = panel.querySelector('#wuolah-pro-btn');
-
-        miBoton.addEventListener('mouseenter', function() { miBoton.style.background = '#059669'; });
-        miBoton.addEventListener('mouseleave', function() { miBoton.style.background = '#10b981'; });
-
         miBoton.onclick = function (e) {
             e.preventDefault();
             e.stopPropagation();
             descargarDocumentoFiel(miBoton);
         };
 
-        // Si entramos de nuevas, actualizamos el texto informativo con el nombre deducido de la URL
         const datosInmediatos = extraerDatosDesdeUrlActual();
         if (datosInmediatos) {
             const textInfo = panel.querySelector('#wuolah-pro-info');
@@ -259,18 +248,16 @@
         }
     }
 
-    // Monitoreo constante del estado de las rutas SPA
     let ultimaRuta = window.location.pathname;
     setInterval(() => {
         if (window.location.pathname.startsWith('/apuntes/')) {
             crearPanelIndependiente();
-
             if (window.location.pathname !== ultimaRuta) {
                 ultimaRuta = window.location.pathname;
                 documentoActivo.id = null;
                 documentoActivo.nombre = null;
                 documentoActivo.urlAsociada = null;
-
+                
                 const info = document.getElementById('wuolah-pro-info');
                 const datosNuevos = extraerDatosDesdeUrlActual();
                 if (info && datosNuevos) {
