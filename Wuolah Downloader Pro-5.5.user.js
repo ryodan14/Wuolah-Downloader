@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Wuolah Downloader Pro (Universal & iPad Fix)
+// @name         Wuolah Downloader Pro (iPad Native Fix)
 // @namespace    https://wuolah.com
-// @version      5.8
-// @description  Descarga con nombres limpios y compatibilidad total para iPad/iOS (Safari y Chrome móvil)
+// @version      5.9
+// @description  Descarga con compatibilidad nativa total para iPadOS y iOS usando enlaces HTML5 directos
 // @author       tu
 // @match        https://wuolah.com/*
 // @grant        GM_xmlhttpRequest
@@ -24,7 +24,7 @@
         return (n || 'archivo').replace(/[<>:"/\\|?*]/g, '_').replace(/_pdf$/i, '').trim(); 
     }
 
-    // ─── 1. INTERCEPTOR XMLHTTPREQUEST ────────────────────────
+    // ─── INTERCEPTORES API ────────────────────────────────────
     const originalOpen = XMLHttpRequest.prototype.open;
     XMLHttpRequest.prototype.open = function (method, url) {
         this.addEventListener('load', function () {
@@ -44,12 +44,10 @@
         return originalOpen.apply(this, arguments);
     };
 
-    // ─── 2. INTERCEPTOR FETCH NATIVO ──────────────────────────
     const originalFetch = window.fetch;
     window.fetch = async function (...args) {
         const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
         const response = await originalFetch.apply(this, args);
-        
         if (url.includes('api.wuolah.com/v2/documents/') || url.includes('api.wuolah.com/v2/uploads/')) {
             try {
                 const clone = response.clone();
@@ -66,7 +64,6 @@
         return response;
     };
 
-    // ─── 3. PLAN DE RESCATE AVANZADO (ID + NOMBRE DESDE URL) ──
     function extraerDatosDesdeUrlActual() {
         const path = window.location.pathname;
         const match = path.match(/-(\d+)(?:\/|$|\?)/);
@@ -76,13 +73,11 @@
         const partes = path.split('/');
         const slugCompleto = partes[partes.length - 1] || partes[partes.length - 2] || "";
         let nombreCazado = slugCompleto.replace(`-${id}`, '').replace(/-pdf$/i, '').replace(/-/g, ' ');
-        
         if (!nombreCazado || nombreCazado.trim() === "") nombreCazado = "archivo_wuolah";
 
         return { id: id, nombre: nombreCazado.trim() };
     }
 
-    // ─── CREDENCIALES ─────────────────────────────────────────
     function getToken() {
         const cookieMatch = document.cookie.match(/(?:^|;\s*)token=([^;]+)/);
         if (cookieMatch) return decodeURIComponent(cookieMatch[1]);
@@ -98,7 +93,7 @@
         return null;
     }
 
-    // ─── ACCIÓN DE DESCARGA ADAPTADA A MÓVILES/IPAD ───────────
+    // ─── NÚCLEO DE DESCARGA ADAPTADO ──────────────────────────
     function descargarDocumentoFiel(boton) {
         const token = getToken();
         if (!token) {
@@ -150,24 +145,32 @@
                     let nombreFinal = sanitize(documentoActivo.nombre);
                     if (!nombreFinal.toLowerCase().endsWith('.pdf')) nombreFinal += '.pdf';
 
-                    boton.textContent = '✓ Abriendo...';
-
-                    // PLAN B INTEGRADO: Detectar si es un iPad/iPhone o si falla la descarga directa
+                    // Detectar entorno Apple Móvil (iPad / iPhone)
                     const esAppleMovil = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
                     if (esAppleMovil) {
-                        // En iPad abrimos el archivo directamente en pestaña nueva para esquivar el bloqueo de Apple
-                        window.open(url, '_blank');
-                        setTimeout(() => restaurarBoton(boton), 1500);
+                        boton.textContent = '✓ ¡Listo! Toca aquí';
+                        boton.style.background = '#3b82f6'; // Cambia a azul indicando que es un enlace físico
+
+                        // Convertimos temporalmente el botón en un enlace directo nativo HTML5
+                        const wrapperA = document.createElement('a');
+                        wrapperA.href = url;
+                        wrapperA.target = '_self'; // Forzamos a abrir en la misma pestaña si las nuevas están capadas
+                        wrapperA.style.textDecoration = 'none';
+                        
+                        // Envolvemos el botón para que al tocarlo el iPad reaccione nativamente al enlace
+                        boton.parentNode.insertBefore(wrapperA, boton);
+                        wrapperA.appendChild(boton);
+
+                        // Si el usuario vuelve a hacer clic sobre el botón modificado, se abrirá el flujo nativo
+                        miBoton.onclick = null; 
                     } else {
-                        // En ordenadores intentamos la descarga directa tradicional
+                        // Flujo normal para ordenadores
+                        boton.textContent = '✓ Guardando...';
                         GM_download({
                             url: url,
                             name: nombreFinal,
-                            onerror: () => {
-                                window.open(url, '_blank');
-                                restaurarBoton(boton);
-                            },
+                            onerror: () => { window.open(url, '_blank'); restaurarBoton(boton); },
                             onload: () => setTimeout(() => restaurarBoton(boton), 1500)
                         });
                     }
@@ -178,20 +181,19 @@
                 }
             },
             onerror: () => {
-                alert('Error de conexión con el servidor.');
+                alert('Error de conexión.');
                 restaurarBoton(boton);
             }
         });
     }
 
-    // ─── INTERFAZ GRÁFICA INTERNA ─────────────────────────────
+    // ─── INTERFAZ FLOTANTE ────────────────────────────────────
     function actualizarInterfazAEncontrado() {
         const btn = document.getElementById('wuolah-pro-btn');
         const textInfo = document.getElementById('wuolah-pro-info');
         if (btn && documentoActivo.nombre) {
             btn.disabled = false;
             btn.style.background = '#10b981';
-            btn.style.cursor = 'pointer';
             btn.textContent = `🚀 Descargar PDF`;
         }
         if (textInfo && documentoActivo.nombre) {
@@ -213,7 +215,7 @@
         panel.style.cssText = `
             position: fixed; bottom: 20px; right: 20px; z-index: 999999;
             background: #111827; color: #f3f4f6; font-family: system-ui, sans-serif;
-            border-radius: 12px; padding: 14px; width: 250px;
+            border-radius: 12px; padding: 14px; width: 240px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid #374151;
         `;
 
@@ -228,7 +230,7 @@
                 background: #10b981; color: white; font-weight: bold; 
                 padding: 10px; border-radius: 6px; border: none; 
                 width: 100%; display: block; font-size: 13px;
-                cursor: pointer; transition: background 0.2s;
+                cursor: pointer;
             ">🚀 Descargar PDF</button>
         `;
 
@@ -263,6 +265,15 @@
                 if (info && datosNuevos) {
                     info.textContent = datosNuevos.nombre.slice(0, 35);
                     info.style.color = '#7eb8f7';
+                    
+                    // Si la ruta cambió, destruimos herencias de enlaces anteriores para evitar bucles
+                    const btn = document.getElementById('wuolah-pro-btn');
+                    if (btn && btn.parentNode.tagName === 'A') {
+                        const arr = btn.parentNode;
+                        arr.parentNode.insertBefore(btn, arr);
+                        arr.remove();
+                        restaurarBoton(btn);
+                    }
                 }
             }
         } else {
